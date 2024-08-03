@@ -1,0 +1,102 @@
+Create the Employee_Hierarchy Table
+
+CREATE TABLE Employee_Hierarchy (
+    EMPLOYEEID VARCHAR(20),
+    REPORTINGTO NVARCHAR(MAX),
+    EMAILID NVARCHAR(MAX),
+    LEVEL INT,
+    FIRSTNAME NVARCHAR(MAX),
+    LASTNAME NVARCHAR(MAX)
+);
+
+
+CREATE FUNCTION dbo.GetFirstName(@Email NVARCHAR(MAX))
+RETURNS NVARCHAR(MAX)
+AS
+BEGIN
+    RETURN LEFT(@Email, CHARINDEX('.', @Email) - 1)
+END;
+
+CREATE FUNCTION dbo.GetLastName(@Email NVARCHAR(MAX))
+RETURNS NVARCHAR(MAX)
+AS
+BEGIN
+    RETURN LEFT(SUBSTRING(@Email, CHARINDEX('.', @Email) + 1, LEN(@Email)), CHARINDEX('@', SUBSTRING(@Email, CHARINDEX('.', @Email) + 1, LEN(@Email))) - 1)
+END;
+
+Create the Stored Procedure SP_hierarchy
+
+CREATE PROCEDURE SP_hierarchy
+AS
+BEGIN
+    -- Truncate the Employee_Hierarchy table--
+    TRUNCATE TABLE Employee_Hierarchy;
+
+    -- Create a temporary table to hold the hierarchy data
+    CREATE TABLE #TempHierarchy (
+        EMPLOYEEID VARCHAR(20),
+        REPORTINGTO NVARCHAR(MAX),
+        EMAILID NVARCHAR(MAX),
+        LEVEL INT,
+        FIRSTNAME NVARCHAR(MAX),
+        LASTNAME NVARCHAR(MAX)
+    );
+
+    -- Recursive CTE to generate the hierarchy--
+    WITH HierarchyCTE AS (
+        -- Base case: employees with no reporting manager
+        SELECT 
+            E.EmployeeID,
+            E.ReportingTo,
+            E.EmailID,
+            1 AS Level,
+            dbo.GetFirstName(E.EmailID) AS FirstName,
+            dbo.GetLastName(E.EmailID) AS LastName
+        FROM 
+            Employee_Master E
+        WHERE 
+            E.ReportingTo IS NULL
+
+        UNION ALL
+
+        -- Recursive case: employees reporting to someone--
+        SELECT 
+            E.EmployeeID,
+            E.ReportingTo,
+            E.EmailID,
+            H.Level + 1,
+            dbo.GetFirstName(E.EmailID) AS FirstName,
+            dbo.GetLastName(E.EmailID) AS LastName
+        FROM 
+            Employee_Master E
+        INNER JOIN 
+            HierarchyCTE H ON E.ReportingTo = H.EmployeeID
+    )
+
+    -- Insert the hierarchy data into the temporary table--
+    INSERT INTO #TempHierarchy
+    SELECT 
+        EmployeeID,
+        ReportingTo,
+        EmailID,
+        Level,
+        FirstName,
+        LastName
+    FROM 
+        HierarchyCTE;
+
+    -- Insert the hierarchy data into the Employee_Hierarchy table--
+    INSERT INTO Employee_Hierarchy
+    SELECT 
+        EMPLOYEEID,
+        REPORTINGTO,
+        EMAILID,
+        LEVEL,
+        FIRSTNAME,
+        LASTNAME
+    FROM 
+        #TempHierarchy;
+
+    -- Drop the temporary table
+    DROP TABLE #TempHierarchy;
+END;
